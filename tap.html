@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Tap a Box</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        :root {
+            --screen-height: 100vh;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+            overflow: hidden;
+            background-color: #0d252e; 
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: var(--screen-height);
+        }
+
+        /* --- NEW LARGER DECORATIONS --- */
+        .decoration {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 32rem; /* Wider decorations */
+            z-index: 0;
+            opacity: 0.6;
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+        .decoration svg {
+            width: 100%;
+            height: auto;
+        }
+        .decoration .trace {
+            stroke: #2dd4bf;
+            stroke-width: 1;
+            filter: drop-shadow(0 0 3px rgba(45, 212, 191, 0.7));
+            stroke-dasharray: 200;
+            stroke-dashoffset: 200;
+            animation: draw-trace 10s linear infinite;
+        }
+        .decoration .node {
+            fill: #2dd4bf;
+            filter: drop-shadow(0 0 4px rgba(45, 212, 191, 1));
+            animation: pulse-node 4s ease-in-out infinite;
+        }
+        #decoration-top { top: 1rem; }
+        #decoration-bottom { bottom: 1rem; }
+
+        @keyframes draw-trace {
+            to { stroke-dashoffset: -200; }
+        }
+        @keyframes pulse-node {
+            50% { opacity: 0.5; }
+        }
+        
+        body.game-active .decoration {
+            opacity: 0.25;
+            transform: translateX(-50%) scale(0.95);
+        }
+
+        #game-area {
+            background-color: transparent;
+            background-image: 
+                linear-gradient(rgba(45, 212, 191, 0.1) 1px, transparent 1px),
+                linear-gradient(to right, rgba(45, 212, 191, 0.1) 1px, transparent 1px);
+            background-size: 2rem 2rem;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            border-radius: 0.5rem;
+            border: 1px solid #1a566b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 24rem; /* Standardized Height */
+        }
+        #game-area-wrapper {
+            perspective: 500px;
+        }
+        #game-area::before {
+             content: '';
+             position: absolute;
+             inset: 0;
+             background: radial-gradient(circle at center, transparent 40%, #0d252e 90%);
+             z-index: 1;
+        }
+        
+        #game-container { 
+            width: 100%; 
+            max-width: 28rem; 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 5;
+            justify-content: center; /* This is the key change */
+            flex-grow: 1;
+        }
+
+        .layout-portrait #scoreboard { order: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; padding: 1rem; margin-bottom: 1rem; background-color: rgba(13, 37, 46, 0.8); backdrop-filter: blur(5px); border-radius: 0.5rem; width: 100%; }
+        .layout-portrait #game-area-wrapper { order: 2; }
+        .layout-portrait #header, .layout-portrait #footer { display: none; }
+        .layout-landscape { justify-content: space-between; align-items: center; }
+        .layout-landscape #game-container { justify-content: space-between; }
+        .layout-landscape #header { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+        .layout-landscape #header-logo { width: 4rem; }
+        .layout-landscape #game-area-wrapper { width: 100%; flex-grow: 1; display: flex; align-items: center; justify-content: center; margin: 1rem 0; }
+        .layout-landscape #footer { width: 100%; text-align: center; }
+        .layout-landscape #scoreboard { display: none; }
+        
+        #game-controls { position: absolute; z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+        #layout-toggle { background: rgba(20,184,166,0.2); border: 1px solid rgba(45,212,191,0.5); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #2dd4bf; }
+        #layout-toggle svg { width: 24px; height: 24px; }
+        .layout-portrait #layout-toggle .landscape-icon { display: none; }
+        .layout-landscape #layout-toggle .portrait-icon { display: none; }
+        #particle-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; border-radius: 0.5rem; z-index: 3; }
+        #focus-reticle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 150px; height: 150px; border: 2px solid rgba(45, 212, 191, 0.2); border-radius: 50%; transition: all 0.3s ease; z-index: 4; opacity: 0; }
+        #focus-reticle::before, #focus-reticle::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; border: 1px solid; animation: reticle-pulse 3s ease-in-out infinite; }
+        #focus-reticle::before { width: 125%; height: 125%; border-color: rgba(45, 212, 191, 0.15); animation-delay: -0.5s; }
+        #focus-reticle::after { width: 75%; height: 75%; border-color: rgba(45, 212, 191, 0.25); }
+        @keyframes reticle-pulse { 50% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.8; } }
+        .reticle-hit { transform: translate(-50%, -50%) scale(1.1); border-color: #fff !important; }
+        .reticle-miss { border-color: #ec4899 !important; animation: reticle-shake 0.3s ease; }
+        @keyframes reticle-shake { 0%, 100% { transform: translate(-50%, -50%) rotate(0deg); } 25% { transform: translate(-52%, -50%) rotate(-1deg); } 75% { transform: translate(-48%, -50%) rotate(1deg); } }
+        #streak-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.75rem; font-weight: 700; color: rgba(255, 255, 255, 0.5); opacity: 0; transition: all 0.3s ease; pointer-events: none; text-shadow: 0 0 10px rgba(45, 212, 191, 0.5); }
+        #streak-display.visible { opacity: 1; }
+        #streak-display.streak-pop { animation: streak-pop-anim 0.2s ease-out; }
+        @keyframes streak-pop-anim { 50% { transform: translate(-50%, -50%) scale(1.4); color: rgba(255, 255, 255, 1); } }
+        .bonus-text { position: absolute; top: 40%; left: 50%; transform: translateX(-50%); font-size: 1.5rem; font-weight: bold; color: #f59e0b; text-shadow: 0 0 10px #f59e0b; pointer-events: none; animation: float-up 1.5s ease-out forwards; z-index: 100; }
+        @keyframes float-up { 0% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, -100px); opacity: 0; } }
+        .box { position: absolute; width: 3.5rem; height: 3.5rem; transition: all 0.2s ease-out; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; color: #fff; cursor: pointer; user-select: none; z-index: 10; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        .box-hit { transform: scale(1.1); }
+        .box::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 0.5rem; opacity: 0; z-index: 5; }
+        #start-button { padding: 1rem 2.5rem; font-size: 1.5rem; box-shadow: 0 8px 25px rgba(45, 212, 191, 0.4); }
+        .box-normal { background: linear-gradient(to right, #40E0D0, #15aabf); box-shadow: 0 0 20px rgba(64, 224, 208, 0.7), inset 0 0 8px rgba(255, 255, 255, 0.6); }
+        .box-bonus { background: linear-gradient(to right, #fb923c, #f97316); box-shadow: 0 0 20px rgba(249, 115, 22, 0.7), inset 0 0 8px rgba(255, 255, 255, 0.6); }
+        .box-time { background: linear-gradient(to right, #bef264, #a3e635); box-shadow: 0 0 20px rgba(163, 230, 53, 0.7), inset 0 0 8px rgba(255, 255, 255, 0.6); }
+        .box-penalty { background: linear-gradient(to right, #f472b6, #ec4899); box-shadow: 0 0 20px rgba(236, 72, 153, 0.7), inset 0 0 8px rgba(255, 255, 255, 0.6); }
+        .miss-flash { transform: rotateX(-5deg) !important; transition: transform 0.1s ease; }
+        .particle { position: absolute; border-radius: 50%; pointer-events: none; transition: transform 0.6s ease-out, opacity 0.6s ease-out; }
+        .pop-in::after { animation: trail-fade 0.4s ease-out; }
+        @keyframes trail-fade { from { opacity: 0.7; transform: scale(1.2); } to { opacity: 0; transform: scale(0.8); } }
+        @keyframes pop-in { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .pop-in { animation: pop-in 0.2s ease-out; }
+        @keyframes score-pop-anim { 50% { transform: scale(1.2); } }
+        .score-pop { animation: score-pop-anim 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="p-4">
+    <div id="decoration-top" class="decoration">
+         <svg viewBox="0 0 400 100">
+            <!-- More complex and larger SVG circuit -->
+            <circle class="node" cx="200" cy="20" r="4"></circle>
+            <path class="trace" d="M200 20 L200 40 L150 70 L100 70" fill="none"></path>
+            <path class="trace" d="M200 20 L200 40 L250 70 L300 70" fill="none" style="animation-delay: -5s;"></path>
+            <path class="trace" d="M100 70 L80 90" fill="none" style="animation-delay: -2s;"></path>
+            <path class="trace" d="M300 70 L320 90" fill="none" style="animation-delay: -7s;"></path>
+            <circle class="node" cx="150" cy="70" r="3" style="animation-delay: -1s;"></circle>
+            <circle class="node" cx="250" cy="70" r="3" style="animation-delay: -6s;"></circle>
+            <circle class="node" cx="100" cy="70" r="2" style="animation-delay: -2s;"></circle>
+            <circle class="node" cx="300" cy="70" r="2" style="animation-delay: -7s;"></circle>
+            <path class="trace" d="M200 40 L180 50" fill="none" style="animation-delay: -3s;"></path>
+            <path class="trace" d="M200 40 L220 50" fill="none" style="animation-delay: -8s;"></path>
+         </svg>
+    </div>
+    
+    <div id="game-container">
+        <header id="header">
+             <div class="text-left"><span class="text-lg md:text-xl font-semibold text-cyan-200">Score</span><span id="score-immersive" class="text-2xl font-bold block text-white">0</span></div>
+             <div id="header-logo" class="w-16"></div>
+             <div class="text-right"><span class="text-lg md:text-xl font-semibold text-cyan-200">PR</span><span id="high-score-immersive" class="text-2xl font-bold block text-white">0</span></div>
+        </header>
+        <div id="scoreboard" class="text-center">
+             <div><span class="text-lg md:text-xl font-semibold text-cyan-200">Score</span><span id="score-portrait" class="text-2xl font-bold ml-2 block text-white">0</span></div>
+             <div><span class="text-lg md:text-xl font-semibold text-cyan-200">Time</span><span id="time-portrait" class="text-2xl font-bold ml-2 block text-white">30</span></div>
+             <div><span class="text-lg md:text-xl font-semibold text-cyan-200">PR</span><span id="high-score-portrait" class="text-2xl font-bold ml-2 block text-white">0</span></div>
+        </div>
+        <main id="game-area-wrapper">
+            <div id="game-area">
+                <div id="particle-container"></div>
+                <div id="focus-reticle"> <span id="streak-display"></span> </div>
+                <div id="game-controls">
+                    <button id="start-button" class="bg-cyan-500 hover:bg-cyan-600 active:scale-95 text-white font-bold py-3 px-8 rounded-lg text-xl shadow-lg shadow-cyan-500/30 transition-all duration-150 order-2">Start Game</button>
+                    <button id="layout-toggle" title="Change Layout" class="order-1">
+                        <svg class="portrait-icon" xmlns="http://www.w.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                        <svg class="landscape-icon" xmlns="http://www.w.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect><line x1="18" y1="12" x2="18.01" y2="12"></line></svg>
+                    </button>
+                </div>
+            </div>
+        </main>
+        <footer id="footer">
+            <div class="text-lg md:text-xl font-semibold text-cyan-200">Time</div>
+            <div id="time-immersive" class="text-5xl font-bold text-white mb-4">30</div>
+        </footer>
+    </div>
+    <div id="decoration-bottom" class="decoration">
+        <svg viewBox="0 0 400 100">
+            <!-- Mirrored and varied bottom SVG circuit -->
+            <circle class="node" cx="200" cy="80" r="4"></circle>
+            <path class="trace" d="M200 80 L200 60 L150 30 L100 30" fill="none" style="animation-delay: -3s;"></path>
+            <path class="trace" d="M200 80 L200 60 L250 30 L300 30" fill="none" style="animation-delay: -8s;"></path>
+            <path class="trace" d="M100 30 L80 10" fill="none" style="animation-delay: -1s;"></path>
+            <path class="trace" d="M300 30 L320 10" fill="none" style="animation-delay: -6s;"></path>
+            <circle class="node" cx="150" cy="30" r="3" style="animation-delay: -2s;"></circle>
+            <circle class="node" cx="250" cy="30" r="3" style="animation-delay: -7s;"></circle>
+            <circle class="node" cx="100" cy="30" r="2" style="animation-delay: -1s;"></circle>
+            <circle class="node" cx="300" cy="30" r="2" style="animation-delay: -6s;"></circle>
+            <path class="trace" d="M200 60 L180 50" fill="none" style="animation-delay: -4s;"></path>
+            <path class="trace" d="M200 60 L220 50" fill="none" style="animation-delay: -9s;"></path>
+        </svg>
+    </div>
+    <script>
+        // All JavaScript is identical to the previous "Fair Play" version.
+        // It's included here in full to ensure the file is complete and runnable.
+        const setHeight = () => {
+            document.documentElement.style.setProperty('--screen-height', `${window.innerHeight}px`);
+        };
+        window.addEventListener('resize', setHeight);
+        setHeight();
+
+        const gameArea = document.getElementById('game-area');
+        const gameControls = document.getElementById('game-controls');
+        const scoreDisplays = { portrait: document.getElementById('score-portrait'), immersive: document.getElementById('score-immersive') };
+        const timeDisplays = { portrait: document.getElementById('time-portrait'), immersive: document.getElementById('time-immersive') };
+        const highScoreDisplays = { portrait: document.getElementById('high-score-portrait'), immersive: document.getElementById('high-score-immersive') };
+        const startButton = document.getElementById('start-button');
+        const layoutToggleButton = document.getElementById('layout-toggle');
+        const particleContainer = document.getElementById('particle-container');
+        const focusReticle = document.getElementById('focus-reticle');
+        const streakDisplay = document.getElementById('streak-display');
+        
+        let score = 0, timeLeft = 30, timerId = null, isGameActive = false, highScore = 0;
+        let streak = 0;
+        let isProcessingTap = false;
+
+        const synths = {
+            hit: new Tone.PluckSynth({ attackNoise: 0.2, dampening: 4000, resonance: 0.8 }).toDestination(),
+            miss: new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 } }).toDestination(),
+            bonus: new Tone.PluckSynth({ attackNoise: 0.5, dampening: 4000, resonance: 0.9 }).toDestination(),
+            penalty: new Tone.MetalSynth({ frequency: 100, envelope: { attack: 0.001, decay: 0.1, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }).toDestination(),
+            streak: new Tone.Synth({ oscillator: { type: 'triangle8' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.2 } }).toDestination()
+        };
+
+        function updateDisplays() {
+            Object.values(scoreDisplays).forEach(el => el && (el.textContent = score));
+            Object.values(timeDisplays).forEach(el => el && (el.textContent = timeLeft));
+            Object.values(highScoreDisplays).forEach(el => el && (el.textContent = highScore));
+        }
+
+        function loadHighScore() {
+            highScore = parseInt(localStorage.getItem('tapTheBoxHighScore') || '0', 10);
+            updateDisplays();
+        }
+
+       function createParticles(x, y, color) {
+            for (let i = 0; i < 12; i++) {
+                const particle = document.createElement('div');
+                particle.classList.add('particle');
+                particle.style.backgroundColor = color;
+                particle.style.left = `${x}px`; particle.style.top = `${y}px`;
+                const size = Math.random() * 10 + 5;
+                particle.style.width = `${size}px`; particle.style.height = `${size}px`;
+                gameArea.appendChild(particle);
+                const angle = Math.random() * 360, distance = Math.random() * 60 + 50;
+                const translateX = distance * Math.cos(angle * Math.PI / 180);
+                const translateY = distance * Math.sin(angle * Math.PI / 180);
+                setTimeout(() => {
+                    particle.style.transform = `translate(${translateX}px, ${translateY}px) scale(0)`;
+                    particle.style.opacity = '0';
+                }, 10);
+                setTimeout(() => particle.remove(), 610);
+            }
+        }
+
+        function createBox(type) {
+            const box = document.createElement('div');
+            box.className = `box box-${type}`;
+            box.dataset.type = type;
+            const details = { 'bonus': '+5', 'time': '+2s', 'penalty': '-5', 'normal': '' };
+            box.textContent = details[type];
+            return box;
+        }
+        
+        function spawnNextRound() {
+            gameArea.querySelectorAll('.box').forEach(box => box.remove());
+            isProcessingTap = false; 
+
+            if (Math.random() < 0.35) {
+                let types = ['bonus', 'time', 'penalty'];
+                let specialType = types[Math.floor(Math.random() * types.length)];
+                const specialBox = createBox(specialType);
+                const normalBox = createBox('normal');
+                gameArea.append(specialBox, normalBox);
+                
+                const gameAreaRect = gameArea.getBoundingClientRect();
+                const boxSize = 56, spacing = boxSize * 1.5;
+                const maxLeft = gameAreaRect.width - (boxSize * 2 + spacing);
+                const maxTop = gameAreaRect.height - boxSize;
+                const top = Math.max(0, Math.floor(Math.random() * maxTop));
+                const left = Math.max(0, Math.floor(Math.random() * maxLeft));
+                
+                specialBox.style.top = `${top}px`; normalBox.style.top = `${top}px`;
+                if (Math.random() < 0.5) {
+                    specialBox.style.left = `${left}px`; normalBox.style.left = `${left + spacing}px`;
+                } else {
+                    specialBox.style.left = `${left + spacing}px`; normalBox.style.left = `${left}px`;
+                }
+                specialBox.classList.add('pop-in'); normalBox.classList.add('pop-in');
+            } else {
+                const normalBox = createBox('normal');
+                gameArea.append(normalBox);
+                const gameAreaRect = gameArea.getBoundingClientRect();
+                const boxSize = 56;
+                normalBox.style.top = `${Math.max(0, Math.floor(Math.random() * (gameAreaRect.height - boxSize)))}px`;
+                normalBox.style.left = `${Math.max(0, Math.floor(Math.random() * (gameAreaRect.width - boxSize)))}px`;
+                normalBox.classList.add('pop-in');
+            }
+        }
+
+        function startGame() {
+            if (isGameActive) return;
+            Tone.start();
+            isGameActive = true;
+            document.body.classList.add('game-active');
+            score = 0; timeLeft = 30; streak = 0;
+            updateDisplays();
+            streakDisplay.classList.remove('visible');
+            gameControls.style.display = 'none';
+            focusReticle.style.opacity = '1'; 
+            spawnNextRound();
+            timerId = setInterval(() => {
+                timeLeft--;
+                updateDisplays();
+                if (timeLeft <= 0) endGame();
+            }, 1000);
+        }
+
+        function endGame() {
+            isGameActive = false;
+            document.body.classList.remove('game-active');
+            clearInterval(timerId);
+            gameArea.querySelectorAll('.box').forEach(box => box.remove());
+            focusReticle.style.opacity = '0';
+            streakDisplay.classList.remove('visible');
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('tapTheBoxHighScore', highScore);
+            }
+            updateDisplays();
+            startButton.textContent = 'Play Again?';
+            gameControls.style.display = 'flex';
+        }
+
+        function showStreakBonus(bonus) {
+            const bonusText = document.createElement('div');
+            bonusText.className = 'bonus-text';
+            bonusText.textContent = `+${bonus} STREAK!`;
+            gameArea.appendChild(bonusText);
+            synths.streak.triggerAttackRelease('C6', '8n');
+            setTimeout(() => bonusText.remove(), 1500);
+        }
+        
+        function processBoxHit(tappedBox) {
+            streak++;
+            if (streak >= 2) {
+                streakDisplay.textContent = `x${streak}`;
+                streakDisplay.classList.add('visible', 'streak-pop');
+                setTimeout(() => streakDisplay.classList.remove('streak-pop'), 200);
+            }
+
+            const type = tappedBox.dataset.type;
+            let pointsGained = 0, particleColor = '#40E0D0'; 
+            switch (type) {
+                case 'bonus': pointsGained = 5; particleColor = '#fb923c'; synths.bonus.triggerAttackRelease('G5', '8n'); break;
+                case 'time': timeLeft += 2; particleColor = '#bef264'; synths.bonus.triggerAttackRelease('A5', '8n'); break;
+                case 'penalty': pointsGained = -5; particleColor = '#f472b6'; synths.penalty.triggerAttackRelease('C3', '4n'); break;
+                default: pointsGained = 1; synths.hit.triggerAttackRelease('C5', '8n'); break;
+            }
+            score = Math.max(0, score + pointsGained);
+            
+            if (streak > 0 && streak % 10 === 0) {
+                const bonusPoints = streak;
+                score += bonusPoints;
+                showStreakBonus(bonusPoints);
+            }
+            
+            updateDisplays();
+            if (navigator.vibrate) navigator.vibrate(50);
+            Object.values(scoreDisplays).forEach(el => { if(el) {el.classList.add('score-pop'); setTimeout(() => el.classList.remove('score-pop'), 200);} });
+            
+            focusReticle.classList.add('reticle-hit');
+            setTimeout(() => focusReticle.classList.remove('reticle-hit'), 100);
+
+            spawnNextRound();
+        }
+
+        function handleMiss() {
+            streak = 0;
+            streakDisplay.classList.remove('visible');
+            score = Math.max(0, score - 1);
+            updateDisplays();
+            synths.miss.triggerAttackRelease('C2', '8n');
+            
+            const wrapper = document.getElementById('game-area-wrapper');
+            wrapper.classList.add('miss-flash');
+            focusReticle.classList.add('reticle-miss');
+            setTimeout(() => { 
+                wrapper.classList.remove('miss-flash');
+                focusReticle.classList.remove('reticle-miss'); 
+            }, 300);
+
+            if (navigator.vibrate) navigator.vibrate([100, 50]);
+        }
+        
+        function handleGameAreaTap(e) {
+             if (!isGameActive || isProcessingTap) return;
+            e.preventDefault();
+            isProcessingTap = true; 
+            const tappedBox = e.target.closest('.box');
+            if (tappedBox) { processBoxHit(tappedBox); } 
+            else { handleMiss(); isProcessingTap = false; }
+        }
+
+        function toggleLayout() {
+            const isPortrait = document.body.classList.contains('layout-portrait');
+            const newLayout = isPortrait ? 'layout-landscape' : 'layout-portrait';
+            document.body.classList.remove('layout-portrait', 'layout-landscape');
+            document.body.classList.add(newLayout);
+            localStorage.setItem('tapTheBoxLayout', newLayout);
+        }
+
+        startButton.addEventListener('click', startGame);
+        layoutToggleButton.addEventListener('click', toggleLayout);
+        gameArea.addEventListener('mousedown', handleGameAreaTap);
+        gameArea.addEventListener('touchstart', handleGameAreaTap, { passive: false });
+        
+        window.onload = () => {
+            const savedLayout = localStorage.getItem('tapTheBoxLayout') || 'layout-portrait';
+            document.body.classList.add(savedLayout);
+            loadHighScore();
+        };
+    </script>
+</body>
+</html>
+
+
+    
